@@ -1,0 +1,42 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Create ECR Repo
+
+
+Parameters: 
+  RepoName: 
+    Description: Repository Name.
+    Type: String
+    Default: ''
+    ConstraintDescription: Must specify Repository Name.
+
+
+Resources:  
+  MyRepository: 
+    Type: AWS::ECR::Repository
+    Properties: 
+      RepositoryName: !Ref 'RepoName'
+      RepositoryPolicyText: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Sid: AllowPushPull
+            Effect: Allow
+            Principal: 
+              AWS: 
+                - "arn:aws:iam::308106623039:user/Mohsin"
+                - "arn:aws:iam::308106623039:user/nadir.khan@unit23.tech"
+            Action: 
+              - "ecr:GetDownloadUrlForLayer"
+              - "ecr:BatchGetImage"
+              - "ecr:BatchCheckLayerAvailability"
+              - "ecr:PutImage"
+              - "ecr:InitiateLayerUpload"
+              - "ecr:UploadLayerPart"
+              - "ecr:CompleteLayerUpload"
+
+Outputs:
+  RepositoryArn:
+    Description: Repositiry Arn
+    Value: !GetAtt 'MyRepository.Arn'
+    Export:
+      Name: !Ref 'RepoName'

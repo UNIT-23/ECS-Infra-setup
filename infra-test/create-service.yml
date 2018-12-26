@@ -1,0 +1,120 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates Service Definition
+
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: 'test-ecs'
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the ECS instances.
+  DesiredCapacity:
+    Type: Number
+    Default: '1'
+    Description: Number of instances to launch in your ECS cluster.
+  MaxSize:
+    Type: Number
+    Default: '1'
+    Description: Maximum number of instances that can be launched in your ECS cluster.
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues: [t2.micro, t2.small, t2.medium, t2.large, m3.medium, m3.large,
+      m3.xlarge, m3.2xlarge, m4.large, m4.xlarge, m4.2xlarge, m4.4xlarge, m4.10xlarge,
+      c4.large, c4.xlarge, c4.2xlarge, c4.4xlarge, c4.8xlarge, c3.large, c3.xlarge,
+      c3.2xlarge, c3.4xlarge, c3.8xlarge, r3.large, r3.xlarge, r3.2xlarge, r3.4xlarge,
+      r3.8xlarge, i2.xlarge, i2.2xlarge, i2.4xlarge, i2.8xlarge]
+    ConstraintDescription: Please choose a valid instance type.
+
+# get latest ami using following command
+# aws ssm get-parameters --names /aws/service/ecs/optimized-ami/amazon-linux/recommended/image_id --region us-east-2
+Mappings:
+  AWSRegionToAMI:
+    us-east-1:
+      AMIID: ami-045f1b3f87ed83659
+    us-east-2:
+      AMIID: ami-0307f7ccf6ea35750
+    us-west-1:
+      AMIID: ami-0285183bbef6224bd
+    us-west-2:
+      AMIID: ami-01b70aea4161476b7
+    eu-west-1:
+      AMIID: ami-0627e141ce928067c
+    eu-central-1:
+      AMIID: ami-0eaa3baf6969912ba
+    ap-northeast-1:
+      AMIID: ami-05b296a384694dfa4
+    ap-southeast-1:
+      AMIID: ami-050865a806e0dae53
+    ap-southeast-2:
+      AMIID: ami-02c73ee1100ce3e7a
+
+Resources:  
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: 'ECS-CLUSTER'
+
+  ECSAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+    # A list of subnet identifiers of Amazon Virtual Private Cloud (Amazon VPCs).
+      VPCZoneIdentifier: 
+      - !ImportValue Subnet1
+      - !ImportValue Subnet2
+      HealthCheckGracePeriod: 30
+      LaunchConfigurationName: !Ref 'LaunchConfiguration'
+      MinSize: '1'
+      MaxSize: !Ref 'MaxSize'
+      DesiredCapacity: !Ref 'DesiredCapacity'
+    CreationPolicy:
+    # When AWS CloudFormation creates the associated resource, configures the number of required success signals and the length of time that AWS CloudFormation waits for those signals
+      ResourceSignal:
+        Count: 1
+        # time to wait before making status rollback in format :"PT#H#M#S" , where # is number in this case 15 min
+        Timeout: PT12M
+    UpdatePolicy:
+    # This policy enables you to specify whether AWS CloudFormation replaces an Auto Scaling group with a new one or replaces only the instances in the Auto Scaling group.
+      AutoScalingReplacingUpdate:
+        WillReplace: 'true'  
+
+  LaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      # For Amazon EC2 instances in a VPC, indicates whether instances in the Auto Scaling group receive public IP addresses. If you specify true, each instance in the Auto Scaling group receives a unique public IP address.
+      AssociatePublicIpAddress: true  
+      # Provides the unique ID of the Amazon Machine Image (AMI) that was assigned during registration.
+      ImageId: !FindInMap [AWSRegionToAMI, !Ref 'AWS::Region', AMIID]
+      # A list that contains the EC2 security groups to assign to the instances in the Auto Scaling group. 
+      SecurityGroups: [!ImportValue 'ECSSecurityGroup']
+      InstanceType: !Ref 'InstanceType'
+      IamInstanceProfile: !ImportValue 'EC2InstanceProfile'
+      KeyName: !Ref 'KeyName'
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
+          yum install -y aws-cfn-bootstrap
+          # /opt/aws/bin/cfn-init -v --region ${AWS::Region} --stack ${AWS::StackName} --resource ECSAutoScalingGroup
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource ECSAutoScalingGroup --region ${AWS::Region}
+          
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn: ECSAutoScalingGroup
+    #  DependsOn: LoadBalancerRule
+    Properties:
+      Cluster: !Ref 'ECSCluster'
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 75
+      # The number of simultaneous tasks that you want to run on the cluster. Specify the tasks with the TaskDefinition property.
+      DesiredCount: '1'
+      LoadBalancers:
+      - ContainerName: nginx-server
+        ContainerPort: '80'
+        TargetGroupArn: !ImportValue 'ECSTG'
+      Role: !ImportValue 'ECSFullAccessRole'
+      TaskDefinition: !ImportValue 'NginxTask'
+
+
+

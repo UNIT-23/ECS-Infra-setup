@@ -1,0 +1,201 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: LoadBalancers and SecurityGroup  for ECS
+
+# ----------------------------------------------------------------- 
+# A load balancer serves as the single point of contact for clients.
+# Clients send requests to the load balancer, and the load balancer sends them to targets,
+# such as EC2 instances, in two or more Availability Zones.
+# To configure your load balancer,
+# 1 you create target groups 
+# 2 register targets with your target groups.
+# 3 create listeners to check for connection requests from clients
+# 4 createlistener rules to route requests from clients to the targets in one or more target groups.
+# ----------------------------------------------------------------- 
+
+
+  
+
+Parameters: 
+  CreateSSL: 
+    Description: Create SSL Listener.
+    Default: false
+    Type: String
+    AllowedValues: [true, false]
+  SSLARN: 
+    Description: AWS SSL ARN.
+    Default: ''
+    Type: String
+
+Conditions: 
+  CreateSSLListener: !Equals [ !Ref CreateSSL, true ]
+
+Resources:
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: 'VPC_ALB_SG'
+      GroupDescription: Security group for loadbalancer to services on ECS
+      VpcId: !ImportValue 'VPC'
+      # By default no traffic is allowed into the instance so we have to define explicitly 
+      SecurityGroupIngress:
+          # all Ips
+        - CidrIp: 0.0.0.0/0
+          # -1 to specify all protocols (tcp,udp,icmp). 
+          IpProtocol: -1
+
+
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: ALBSecurityGroup
+    Properties:
+      GroupName: 'VPC_ECS_SG'
+      GroupDescription: Security group for ECS services
+      VpcId: !ImportValue 'VPC'
+      # By default no traffic is allowed into the instance so we have to define explicitly 
+      SecurityGroupIngress:
+        # All filtered traffic from loadbalancer security group will pass through this
+      - SourceSecurityGroupId: !Ref 'ALBSecurityGroup'
+        IpProtocol: -1
+
+
+  ECSALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn: ALBSecurityGroup
+    Properties:
+      Name: ECSALB
+      # The nodes of an Internet-facing load balancer have public IP addresses. The nodes of an internal load balancer have only private IP addresses.
+      # Therefore, Internet-facing load balancers can route requests from clients over the Internet and internal load balancers can only route requests from clients with access to the VPC for the load balancer.
+      Scheme: internet-facing
+      LoadBalancerAttributes:
+      - Key: idle_timeout.timeout_seconds
+        Value: '40'    
+      Subnets:
+      - !ImportValue 'Subnet1'
+      - !ImportValue 'Subnet2'
+      SecurityGroups: [!Ref 'ALBSecurityGroup']
+
+
+
+
+  ECSTG:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: ECSALB
+    Properties:
+      Name: ECSTG
+      # The approximate number of seconds between health checks for an individual target default is 30 valid (5-300)
+      HealthCheckIntervalSeconds: 10
+      # The ping path that is the destination on the targets for health checks.
+      HealthCheckPath: /
+      # The protocol the load balancer uses when performing health checks on targets. 
+      HealthCheckProtocol: HTTP
+      # the amount of time, in seconds, during which no response from a target means a failed health check. For Application Load Balancers, 
+      HealthCheckTimeoutSeconds: 5
+      # The number of consecutive health checks successes required before considering an unhealthy target healthy. 
+      HealthyThresholdCount: 3
+      # The number of consecutive health check failures required before considering a target unhealthy
+      UnhealthyThresholdCount: 2
+      # The port on which the targets receive traffic.
+      Port: 80
+      # The protocol to use for routing traffic to the targets.
+      Protocol: HTTP
+      # instance , ip etc
+      TargetType: instance
+      VpcId: !ImportValue 'VPC'    
+
+
+
+  #  The listener checks for connection requests and forwards them to one or more target groups.
+  ALBHTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn:
+    - ECSTG
+    - ECSALB
+    Properties:
+      # The default actions that the listener takes when handling incoming requests.
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref 'ECSTG'
+      LoadBalancerArn: !Ref 'ECSALB'
+      # The port on which the listener listens for requests.
+      Port: '80'
+      # The protocol that clients must use to send requests to the listener.
+      Protocol: HTTP
+
+  # Defines which condition an Elastic Load Balancing listener takes action on and the action that it takes. 
+  ECSALBHTTPListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    DependsOn: 
+    - ALBHTTPListener
+    - ECSTG
+    Properties:
+      Actions:
+      - Type: forward
+        TargetGroupArn: !Ref 'ECSTG'
+      Conditions:
+      # Valid values: (host-header) you can specify a single host name (for example, my.example.com) as value | (path-pattern) single path pattern (for example, /img/*). 
+      - Field: path-pattern
+        Values: [/]
+      ListenerArn: !Ref 'ALBHTTPListener'
+      Priority: 1    
+
+
+# --------------------------------------------------------- Conditional resources------------------------------------
+
+  ALBHTTPSListener:
+    Condition: CreateSSLListener
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn: 
+    - ECSALB
+    - ECSTG
+    Properties:
+      Certificates:
+      - CertificateArn: !Ref SSLARN
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref 'ECSTG'
+      LoadBalancerArn: !Ref 'ECSALB'
+      Port: '443'
+      Protocol: HTTPS
+
+
+  ECSALBHTTPListenerRule:
+    Condition: CreateSSLListener
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    DependsOn: 
+    - ALBHTTPSListener
+    - ECSTG
+    DependsOn: ALBHTTPSListener
+    Properties:
+      Actions:
+      - Type: forward
+        TargetGroupArn: !Ref 'ECSTG'
+      Conditions:
+      - Field: path-pattern
+        Values: [/]
+      ListenerArn: !Ref 'ALBHTTPSListener'
+      Priority: 1        
+      
+          
+
+
+
+Outputs:
+
+  ECSALB:
+    Description: ECS Load Balancer
+    Value: !Ref 'ECSALB'
+    Export:
+      Name: 'ECSALB'    
+
+  ECSTG:
+    Description: ECS Target Group
+    Value: !Ref 'ECSTG'
+    Export:
+      Name: 'ECSTG'          
+
+  ECSSecurityGroup:
+    Description: ECS Security Group
+    # @TODO Change to original value for ecs security group
+    Value: !Ref 'ALBSecurityGroup'
+    Export:
+      Name: 'ECSSecurityGroup'              

@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: task roles and policies
+
+
+Resources:
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      # The trust policy that is associated with this role
+      AssumeRolePolicyDocument:
+        Statement:
+        # The Sid (statement ID) is an optional identifier that you provide for the policy statement
+        - Sid: ''
+          # The Effect element is required and specifies whether the statement results in an allow or an explicit deny. Valid values for Effect are Allow and Deny.
+          Effect: Allow
+          Principal:
+            Service: [ecs-tasks.amazonaws.com]
+          Action: ['sts:AssumeRole']
+      Path: /
+      Policies:
+        - PolicyName: AmazonECSTaskExecutionRolePolicy
+          PolicyDocument:
+            Statement:
+            - Effect: Allow
+              Action:
+                # ECS Tasks to download images from ECR
+                - 'ecr:GetAuthorizationToken'
+                - 'ecr:BatchCheckLayerAvailability'
+                - 'ecr:GetDownloadUrlForLayer'
+                - 'ecr:BatchGetImage'
+                # ECS tasks to upload logs to CloudWatch
+                - 'logs:CreateLogStream'
+                - 'logs:PutLogEvents'
+              Resource: '*'
+
+
+
+  ECSFullAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: [ecs.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerServiceFullAccess'   
+
+
+# The Amazon ECS container agent makes calls to the Amazon ECS API on your behalf.
+# Container instances that run the agent require an IAM policy and role for the service to know that the agent belongs to you.
+# Before you can launch container instances and register them into a cluster, 
+# you must create an IAM role for those container instances to use when they are launched.
+# This requirement applies to container instances launched with the Amazon ECS-optimized AMI provided by Amazon, or with any other instances that you intend to run the agent on.
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: [ec2.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role'
+  
+
+  AutoscalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: [application-autoscaling.amazonaws.com]
+          Action: ['sts:AssumeRole']
+      Path: /
+      Policies:
+      - PolicyName: service-autoscaling
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+              - 'application-autoscaling:*'
+              - 'cloudwatch:DescribeAlarms'
+              - 'cloudwatch:PutMetricAlarm'
+              - 'ecs:DescribeServices'
+              - 'ecs:UpdateService'
+            Resource: '*'
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [!Ref 'EC2InstanceRole']                                    
+
+Outputs:
+
+  ECSTaskExecutionRole:
+    Description: ECS Task Execution Role
+    Value: !GetAtt 'ECSTaskExecutionRole.Arn'
+    Export:
+      Name: 'ECSTaskExecutionRole'
+
+  ECSFullAccessRole:
+    Description: ECS Full Access Role
+    Value: !GetAtt 'ECSFullAccessRole.Arn'
+    Export:
+      Name: 'ECSFullAccessRole'    
+
+  EC2InstanceRole:
+    Description: EC2 Instance amazon policy access
+    Value: !GetAtt 'EC2InstanceRole.Arn'
+    Export:
+      Name: 'EC2InstanceRole'
+
+  EC2InstanceProfile:
+    Description: EC2 Instance profile role
+    Value: !GetAtt 'EC2InstanceProfile.Arn'
+    Export:
+      Name: 'EC2InstanceProfile'    
+
+  AutoscalingRole:        
+    Description: EC2 Instance autoscaling role
+    Value: !GetAtt 'AutoscalingRole.Arn'
+    Export:
+      Name: 'AutoscalingRole'    
+            
