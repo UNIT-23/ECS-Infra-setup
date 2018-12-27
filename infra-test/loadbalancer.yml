@@ -121,7 +121,7 @@ Resources:
       # The protocol that clients must use to send requests to the listener.
       Protocol: HTTP
 
-  # Defines which condition an Elastic Load Balancing listener takes action on and the action that it takes. 
+  # Defines which condition an Elastic Load Balancing listener takes action on. 
   ECSALBHTTPListenerRule:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
     DependsOn: 
@@ -158,13 +158,12 @@ Resources:
       Protocol: HTTPS
 
 
-  ECSALBHTTPListenerRule:
+  ECSALBHTTPSListenerRule:
     Condition: CreateSSLListener
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
     DependsOn: 
     - ALBHTTPSListener
     - ECSTG
-    DependsOn: ALBHTTPSListener
     Properties:
       Actions:
       - Type: forward
@@ -176,9 +175,6 @@ Resources:
       Priority: 1        
       
           
-
-
-
 Outputs:
 
   ECSALB:
@@ -195,7 +191,7 @@ Outputs:
 
   ECSSecurityGroup:
     Description: ECS Security Group
-    # @TODO Change to original value for ecs security group
+    # @TODO Change to original value for ecs security
     Value: !Ref 'ALBSecurityGroup'
     Export:
       Name: 'ECSSecurityGroup'              
