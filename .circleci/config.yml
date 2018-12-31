@@ -1,0 +1,20 @@
+version: 2
+jobs:
+  build:  
+    docker:
+      - image: circleci/node:latest
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Build image
+          command: |
+            docker build -t nginx-serv .
+      - run:
+          name: Test image
+          command: |
+            docker run -d -p 8080:80 --name built-image nginx-serv
+            sleep 10
+            docker run --network container:built-image appropriate/curl --retry 10 --retry-connrefused http://localhost:8080 | grep "Hello"
+  
+  
