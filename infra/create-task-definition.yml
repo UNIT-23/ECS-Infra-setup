@@ -3,13 +3,13 @@ Description: creates Task Definition
 
 
 Resources:
- NginxTask:
+ TodoTask:
     Type: AWS::ECS::TaskDefinition
     Properties:
       # The name of a family that this task definition is registered to.  A family groups multiple versions of a task definition
       Family: !Join ['', [!Ref 'AWS::StackName', '-ecs-demo-app']]
-      Cpu: 128
-      Memory: 100
+      Cpu: 512
+      Memory: 300
       # [none, bridge, awsvpc, and host]
       NetworkMode: bridge
       RequiresCompatibilities:
@@ -18,22 +18,38 @@ Resources:
       ExecutionRoleArn: !ImportValue ECSTaskExecutionRole
       TaskRoleArn: !ImportValue ECSTaskExecutionRole
       ContainerDefinitions:
-      - Name: nginx-server
-        Image: !Join ["", [!Ref "AWS::AccountId", ".dkr.ecr.", !Ref "AWS::Region", ".amazonaws.com/", "nginx-ecs", ":v1"]]
-        Cpu: 10
-        Memory: 50
+      - Name: server
+        Image: !Join ["", [!Ref "AWS::AccountId", ".dkr.ecr.", !Ref "AWS::Region", ".amazonaws.com/", "server", ":latest"]]
+        Cpu: 128
+        Memory: 70
         Essential: true
         PortMappings:
-        - ContainerPort: 80
-          HostPort: 80
+        - ContainerPort: 8081
+          HostPort: 0
           Protocol: tcp
+      - Name: client
+        Image: !Join ["", [!Ref "AWS::AccountId", ".dkr.ecr.", !Ref "AWS::Region", ".amazonaws.com/", "client", ":latest"]]
+        Cpu: 128
+        Memory: 70
+        PortMappings:
+        - ContainerPort: 8080
+          HostPort: 0
+          Protocol: tcp
+      - Name: db
+        Image: !Join ["", [!Ref "AWS::AccountId", ".dkr.ecr.", !Ref "AWS::Region", ".amazonaws.com/", "mongo", ":latest"]]
+        Cpu: 128
+        Memory: 70
+        PortMappings:
+        - ContainerPort: 27017
+          HostPort: 0
+          Protocol: tcp            
+          
 
 
 
 Outputs:
-  Task:
+  TodoTask:
     Description: 'ECS Task Definition'
-    Value: !Ref NginxTask
+    Value: !Ref TodoTask
     Export:
-      Name: 'NginxTask'  
-
+      Name: 'TodoTask'  
